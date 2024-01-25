@@ -63,7 +63,7 @@ func handleSearch(searcher Searcher) func(w http.ResponseWriter, r *http.Request
 		if ok {
 			var err error
 			page, err = strconv.Atoi(pageQuery[0])
-			if err != nil {
+			if err != nil || page < 1 {
 				w.WriteHeader(http.StatusBadRequest)
 				w.Write([]byte("malformed page in URL params"))
 				return
@@ -112,14 +112,17 @@ func (s *Searcher) Search(query string, page int) ([]string, error) {
 			return nil, fmt.Errorf("Unable to compile regex: %v\n, %w", expr, err)
 		}
 
-		idxs := s.SuffixArray.FindAllIndex(reg, page*resultsPerPage)
+		idxs := s.SuffixArray.FindAllIndex(reg, -1)
 		s.indexCache[query] = idxs
 		indexes = idxs
 	}
 
-	results := make([]string, 0, resultsPerPage)
-	for i := (page - 1) * resultsPerPage; i < len(indexes); i++ {
-		idx := indexes[i][0]
+	baseIdx := (page - 1) * resultsPerPage
+	resultsLen := clamp(len(indexes)-baseIdx, 0, resultsPerPage)
+
+	results := make([]string, 0, resultsLen)
+	for i := 0; i < resultsLen; i++ {
+		idx := baseIdx + indexes[i][0]
 		startIdx := max(idx-resultsWidth, 0)
 		endIdx := min(idx+resultsWidth, len(s.CompleteWorks)-1)
 		results = append(results, s.CompleteWorks[startIdx:endIdx])
@@ -141,4 +144,8 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func clamp(val, minval, maxval int) int {
+	return max(minval, min(maxval, val))
 }

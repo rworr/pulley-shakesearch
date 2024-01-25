@@ -26,11 +26,11 @@ const Controller = {
 
   updateTable: (results) => {
     const table = document.getElementById("table-body");
-    const rows = [];
+    const rows = (page > 1) ? [table.innerHTML] : [];
     for (let result of results) {
       rows.push(`<tr><td>${result}</td></tr>`);
     }
-    table.innerHTML = (page > 1) ? table.innerHTML + "," + rows.join(",") : rows; // TODO: better way to do this?
+    table.innerHTML = rows;
   },
 };
 
