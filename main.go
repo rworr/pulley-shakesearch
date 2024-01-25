@@ -123,8 +123,8 @@ func (s *Searcher) Search(query string, page int) ([]string, error) {
 	results := make([]string, 0, resultsLen)
 	for i := 0; i < resultsLen; i++ {
 		idx := indexes[baseIdx+i][0]
-		startIdx := max(idx-resultsWidth, 0)
-		endIdx := min(idx+resultsWidth, len(s.CompleteWorks)-1)
+		startIdx := clamp(idx-resultsWidth, 0, len(s.CompleteWorks)-1)
+		endIdx := clamp(idx+resultsWidth, 0, len(s.CompleteWorks)-1)
 		results = append(results, s.CompleteWorks[startIdx:endIdx])
 	}
 	return results, nil

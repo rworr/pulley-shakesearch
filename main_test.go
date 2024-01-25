@@ -144,7 +144,7 @@ func TestEbook(t *testing.T) {
 	}
 
 	if len(thirdPage) != 0 {
-		t.Errorf("expected 1 results for third page: %s, got %d", query, len(thirdPage))
+		t.Errorf("expected 0 results for third page: %s, got %d", query, len(thirdPage))
 	}
 }
 
