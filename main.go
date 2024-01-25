@@ -10,11 +10,12 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"strconv"
 )
 
 const (
-	resultsLim   = 20  // number of results to return per query
-	resultsWidth = 250 // number of chars to return on each side of matching idx
+	resultsPerPage = 20  // number of results to return per query
+	resultsWidth   = 250 // number of chars to return on each side of matching idx
 )
 
 func main() {
@@ -44,18 +45,32 @@ func main() {
 type Searcher struct {
 	CompleteWorks string
 	SuffixArray   *suffixarray.Index
+	indexCache    map[string][][]int
 }
 
 func handleSearch(searcher Searcher) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		query, ok := r.URL.Query()["q"]
-		if !ok || len(query[0]) < 1 {
+		query := r.URL.Query()
+		searchQuery, ok := query["q"]
+		if !ok || len(searchQuery[0]) < 1 {
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte("missing search query in URL params"))
 			return
 		}
 
-		results, err := searcher.Search(query[0])
+		var page = 1
+		pageQuery, ok := query["p"]
+		if ok {
+			var err error
+			page, err = strconv.Atoi(pageQuery[0])
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte("malformed page in URL params"))
+				return
+			}
+		}
+
+		results, err := searcher.Search(searchQuery[0], page)
 		if err != nil {
 			log.Print(err) // dump failure info to logs before returning generic error to customer
 			w.WriteHeader(http.StatusInternalServerError)
@@ -83,20 +98,47 @@ func (s *Searcher) Load(filename string) error {
 	}
 	s.CompleteWorks = string(dat)
 	s.SuffixArray = suffixarray.New(dat)
+	s.indexCache = make(map[string][][]int)
 	return nil
 }
 
-func (s *Searcher) Search(query string) ([]string, error) {
-	expr := fmt.Sprintf("(?i)%v", regexp.QuoteMeta(query)) // case-insensitive, escape regex chars
-	reg, err := regexp.Compile(expr)
-	if err != nil {
-		return nil, fmt.Errorf("Unable to compile regex: %v\n, %w", expr, err)
+func (s *Searcher) Search(query string, page int) ([]string, error) {
+	indexes, ok := s.indexCache[query]
+
+	if !ok {
+		expr := fmt.Sprintf("(?i)%v", regexp.QuoteMeta(query))
+		reg, err := regexp.Compile(expr)
+		if err != nil {
+			return nil, fmt.Errorf("Unable to compile regex: %v\n, %w", expr, err)
+		}
+
+		idxs := s.SuffixArray.FindAllIndex(reg, page*resultsPerPage)
+		s.indexCache[query] = idxs
+		indexes = idxs
 	}
 
-	results := make([]string, 0, resultsLim)            // update to use make with fixed capacity
-	idxs := s.SuffixArray.FindAllIndex(reg, resultsLim) // update to use case-insensitive regex with fixed return limit
-	for _, idx := range idxs {
-		results = append(results, s.CompleteWorks[idx[0]-resultsWidth:idx[0]+resultsWidth])
+	results := make([]string, 0, resultsPerPage)
+	for i := (page - 1) * resultsPerPage; i < len(indexes); i++ {
+		idx := indexes[i][0]
+		startIdx := max(idx-resultsWidth, 0)
+		endIdx := min(idx+resultsWidth, len(s.CompleteWorks)-1)
+		results = append(results, s.CompleteWorks[startIdx:endIdx])
 	}
 	return results, nil
+}
+
+// TODO: upgrade to Go 1.21 and use builtins
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+// TODO: upgrade to Go 1.21 and use builtins
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
