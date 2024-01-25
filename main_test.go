@@ -123,10 +123,12 @@ func TestSearchDrunk(t *testing.T) {
 
 // ebook appears at beginning and end of the file, so we can test out-of-bounds handling and pages
 func TestEbook(t *testing.T) {
+	searcher := makeSearcher(t)
+
 	query := "ebook"
-	firstPage := searchQuery(t, query)
-	secondPage := searchQueryPage(t, query, 2)
-	thirdPage := searchQueryPage(t, query, 3)
+	firstPage := searchQuery(t, searcher, query)
+	secondPage := searchQueryPage(t, searcher, query, 2)
+	thirdPage := searchQueryPage(t, searcher, query, 3)
 
 	if len(firstPage) != 20 {
 		t.Errorf("expected 20 results for first page: %s, got %d", query, len(firstPage))
@@ -136,25 +138,33 @@ func TestEbook(t *testing.T) {
 		t.Errorf("expected 5 results for second page: %s, got %d", query, len(secondPage))
 	}
 
+	substr := "Professor Michael S. Hart was the originator of the Project Gutenberg"
+	if !strings.Contains(secondPage[0], substr) {
+		t.Errorf("First result on second page did not contain expected string, got %s", secondPage[0])
+	}
+
 	if len(thirdPage) != 0 {
 		t.Errorf("expected 1 results for third page: %s, got %d", query, len(thirdPage))
 	}
 }
 
-func makeRequest(t *testing.T, path string) []string {
+func makeSearcher(t *testing.T) *Searcher {
 	searcher := Searcher{}
 	err := searcher.Load("completeworks.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
+	return &searcher
+}
 
+func makeRequest(t *testing.T, searcher *Searcher, path string) []string {
 	req, err := http.NewRequest("GET", path, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	rr := httptest.NewRecorder()
-	handler := http.HandlerFunc(handleSearch(searcher))
+	handler := http.HandlerFunc(handleSearch(*searcher))
 	handler.ServeHTTP(rr, req)
 
 	if status := rr.Code; status != http.StatusOK {
@@ -170,10 +180,10 @@ func makeRequest(t *testing.T, path string) []string {
 	return results
 }
 
-func searchQuery(t *testing.T, query string) []string {
-	return makeRequest(t, fmt.Sprintf("/search?q=%s", query))
+func searchQuery(t *testing.T, searcher *Searcher, query string) []string {
+	return makeRequest(t, searcher, fmt.Sprintf("/search?q=%s", query))
 }
 
-func searchQueryPage(t *testing.T, query string, page int) []string {
-	return makeRequest(t, fmt.Sprintf("/search?q=%s&p=%d", query, page))
+func searchQueryPage(t *testing.T, searcher *Searcher, query string, page int) []string {
+	return makeRequest(t, searcher, fmt.Sprintf("/search?q=%s&p=%d", query, page))
 }
