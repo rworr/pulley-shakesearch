@@ -9,6 +9,12 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
+)
+
+const (
+	resultsLim   = 20  // number of results to return per query
+	resultsWidth = 250 // number of chars to return on each side of matching idx
 )
 
 func main() {
@@ -48,10 +54,18 @@ func handleSearch(searcher Searcher) func(w http.ResponseWriter, r *http.Request
 			w.Write([]byte("missing search query in URL params"))
 			return
 		}
-		results := searcher.Search(query[0])
+
+		results, err := searcher.Search(query[0])
+		if err != nil {
+			log.Print(err) // dump failure info to logs before returning generic error to customer
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("search failure"))
+			return
+		}
+
 		buf := &bytes.Buffer{}
 		enc := json.NewEncoder(buf)
-		err := enc.Encode(results)
+		err = enc.Encode(results)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte("encoding failure"))
@@ -72,11 +86,17 @@ func (s *Searcher) Load(filename string) error {
 	return nil
 }
 
-func (s *Searcher) Search(query string) []string {
-	idxs := s.SuffixArray.Lookup([]byte(query), -1)
-	results := []string{}
-	for _, idx := range idxs {
-		results = append(results, s.CompleteWorks[idx-250:idx+250])
+func (s *Searcher) Search(query string) ([]string, error) {
+	expr := fmt.Sprintf("(?i)%v", regexp.QuoteMeta(query)) // case-insensitive, escape regex chars
+	reg, err := regexp.Compile(expr)
+	if err != nil {
+		return nil, fmt.Errorf("Unable to compile regex: %v\n, %w", expr, err)
 	}
-	return results
+
+	results := make([]string, 0, resultsLim)            // update to use make with fixed capacity
+	idxs := s.SuffixArray.FindAllIndex(reg, resultsLim) // update to use case-insensitive regex with fixed return limit
+	for _, idx := range idxs {
+		results = append(results, s.CompleteWorks[idx[0]-resultsWidth:idx[0]+resultsWidth])
+	}
+	return results, nil
 }
